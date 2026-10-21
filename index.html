@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ensayos del Mundial</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=Lora:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--tinta:#23303a;--suave:#5d6b76;--papel:#fff;--fondo:#f4f6f8;--acento:#2f8f6b}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Lora",Georgia,serif;color:var(--tinta);background:var(--fondo);line-height:1.7}
+header{text-align:center;padding:64px 20px 40px}
+header h1{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;font-size:clamp(2rem,6vw,3.6rem);margin:0 0 8px;letter-spacing:-.02em}
+header p{margin:0;color:var(--suave)}
+.banda{padding:40px 16px;background:var(--fondo)}
+.hoja{max-width:794px;margin:0 auto;background:var(--papel);border-radius:4px;padding:clamp(24px,6vw,72px);box-shadow:0 2px 14px rgba(35,48,58,.14);overflow-wrap:anywhere}
+.hoja h2{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:1.7rem;line-height:1.2;margin:0 0 6px}
+.autores{color:var(--suave);font-style:italic;margin:0 0 24px;padding-bottom:16px;border-bottom:1px solid #e3e8ec}
+.contenido img{max-width:100%}
+.contenido table{border-collapse:collapse;max-width:100%}
+.contenido td,.contenido th{border:1px solid #ccd3d9;padding:4px 8px}
+.contenido iframe{width:100%;height:80vh;border:0}
+.contenido pre{white-space:pre-wrap;font:inherit;margin:0}
+.quitar{float:right;background:none;border:0;color:var(--suave);cursor:pointer;font-size:.85rem}
+.quitar:hover{color:#b3261e}
+.vacio{text-align:center;color:var(--suave);padding:20px}
+.agregar{text-align:center;padding:40px 16px 90px}
+#mas{width:64px;height:64px;border-radius:50%;border:0;background:var(--acento);color:#fff;font-size:2.2rem;line-height:1;cursor:pointer;box-shadow:0 4px 12px rgba(47,143,107,.4)}
+#mas:hover{filter:brightness(1.08)}
+.agregar small{display:block;margin-top:10px;color:var(--suave)}
+button:focus-visible,input:focus-visible{outline:3px solid #1b6fb5;outline-offset:2px}
+dialog{border:0;border-radius:10px;padding:28px;width:min(440px,92vw);box-shadow:0 10px 40px rgba(0,0,0,.25)}
+dialog::backdrop{background:rgba(35,48,58,.45)}
+dialog h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;margin:0 0 16px}
+label{display:block;font-size:.9rem;margin:12px 0 4px}
+input[type=text],input[type=file]{width:100%;padding:9px;border:1px solid #ccd3d9;border-radius:6px;font:inherit}
+.acciones{display:flex;gap:10px;justify-content:flex-end;margin-top:22px}
+.acciones button{padding:9px 18px;border-radius:6px;border:1px solid #ccd3d9;background:#fff;font:inherit;cursor:pointer}
+.acciones .ok{background:var(--acento);border-color:var(--acento);color:#fff}
+#error{color:#b3261e;font-size:.9rem;min-height:1.2em;margin:10px 0 0}
+@media (min-width:900px){.banda{padding:64px 16px;background:var(--c,var(--fondo))}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Ensayos del Mundial</h1>
+  <p>Lee los ensayos del grupo y añade el tuyo al final de la página.</p>
+</header>
+
+<main id="lista"></main>
+
+<div class="agregar">
+  <button id="mas" aria-label="Añadir documento">+</button>
+  <small>Añadir documento</small>
+</div>
+
+<dialog id="dlg">
+  <form method="dialog" id="form">
+    <h3>Añadir ensayo</h3>
+    <label for="titulo">Título</label>
+    <input type="text" id="titulo" required>
+    <label for="autores">Participantes</label>
+    <input type="text" id="autores" placeholder="Ana, Luis, Marta" required>
+    <label for="archivo">Documento (.docx, .pdf o .txt)</label>
+    <input type="file" id="archivo" accept=".docx,.pdf,.txt" required>
+    <p id="error"></p>
+    <div class="acciones">
+      <button type="button" id="cancelar">Cancelar</button>
+      <button type="submit" class="ok">Añadir</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script>
+const COLORES=['#fde2e4','#dfe7fd','#e2f0cb','#fff1d0','#e8dff5','#d4f0f0','#fbe3d3'];
+const lista=document.getElementById('lista');
+const dlg=document.getElementById('dlg');
+let total=0;
+
+/* ---- Almacenamiento local (IndexedDB) ---- */
+function abrirDB(){
+  return new Promise((ok,mal)=>{
+    const r=indexedDB.open('ensayos-mundial',1);
+    r.onupgradeneeded=()=>r.result.createObjectStore('docs',{keyPath:'id',autoIncrement:true});
+    r.onsuccess=()=>ok(r.result);
+    r.onerror=()=>mal(r.error);
+  });
+}
+async function db(modo,fn){
+  const d=await abrirDB();
+  return new Promise((ok,mal)=>{
+    const t=d.transaction('docs',modo);
+    const res=fn(t.objectStore('docs'));
+    t.oncomplete=()=>ok(res.result);
+    t.onerror=()=>mal(t.error);
+  });
+}
+
+/* ---- Mostrar un documento dentro de la hoja ---- */
+async function contenidoDe(blob,nombre){
+  const n=nombre.toLowerCase();
+  const div=document.createElement('div');
+  div.className='contenido';
+  if(n.endsWith('.docx')){
+    const r=await mammoth.convertToHtml({arrayBuffer:await blob.arrayBuffer()});
+    div.innerHTML=r.value;
+  }else if(n.endsWith('.pdf')){
+    const f=document.createElement('iframe');
+    f.src=URL.createObjectURL(new Blob([blob],{type:'application/pdf'}));
+    f.title='Documento PDF';
+    div.appendChild(f);
+  }else{
+    const p=document.createElement('pre');
+    p.textContent=await blob.text();
+    div.appendChild(p);
+  }
+  return div;
+}
+
+async function pintar(e,quitar){
+  const banda=document.createElement('section');
+  banda.className='banda';
+  banda.style.setProperty('--c',COLORES[total++%COLORES.length]);
+  const hoja=document.createElement('article');
+  hoja.className='hoja';
+  if(quitar){
+    const b=document.createElement('button');
+    b.className='quitar';b.textContent='Quitar';
+    b.onclick=async()=>{
+      if(confirm('¿Quitar este ensayo de tu navegador?')){await db('readwrite',s=>s.delete(e.id));cargar();}
+    };
+    hoja.appendChild(b);
+  }
+  const h=document.createElement('h2');h.textContent=e.titulo;
+  const a=document.createElement('p');a.className='autores';a.textContent=e.autores;
+  hoja.append(h,a);
+  try{hoja.appendChild(await contenidoDe(e.blob,e.nombre));}
+  catch(_){const p=document.createElement('p');p.textContent='No se pudo mostrar este documento.';hoja.appendChild(p);}
+  banda.appendChild(hoja);
+  lista.appendChild(banda);
+}
+
+/* ---- Cargar todo ---- */
+async function cargar(){
+  lista.innerHTML='';total=0;
+  // 1) Ensayos fijos del repositorio (archivo ensayos.json)
+  try{
+    const r=await fetch('ensayos.json');
+    if(r.ok){
+      for(const e of await r.json()){
+        const f=await fetch(e.archivo);
+        if(f.ok) await pintar({titulo:e.titulo,autores:e.participantes,nombre:e.archivo,blob:await f.blob()},false);
+      }
+    }
+  }catch(_){}
+  // 2) Ensayos añadidos desde este navegador
+  try{for(const e of await db('readonly',s=>s.getAll())) await pintar(e,true);}catch(_){}
+  if(!lista.children.length){
+    lista.innerHTML='<p class="vacio">Aún no hay ensayos. Toca + para añadir el primero.</p>';
+  }
+}
+
+/* ---- Formulario ---- */
+document.getElementById('mas').onclick=()=>{document.getElementById('form').reset();document.getElementById('error').textContent='';dlg.showModal();};
+document.getElementById('cancelar').onclick=()=>dlg.close();
+document.getElementById('form').addEventListener('submit',async ev=>{
+  ev.preventDefault();
+  const f=document.getElementById('archivo').files[0];
+  const err=document.getElementById('error');
+  if(!f){err.textContent='Elige un documento.';return;}
+  try{
+    await db('readwrite',s=>s.add({
+      titulo:document.getElementById('titulo').value.trim(),
+      autores:document.getElementById('autores').value.trim(),
+      nombre:f.name,blob:f
+    }));
+    dlg.close();
+    await cargar();
+    window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'});
+  }catch(_){err.textContent='No se pudo guardar el documento. Prueba con otro navegador.';}
+});
+
+cargar();
+</script>
+</body>
+</html>
